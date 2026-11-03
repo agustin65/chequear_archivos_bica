@@ -37,6 +37,9 @@
   td.num { text-align:right; }
   .ok { color:var(--ok); } .bad { color:var(--bad); }
   ul.issues { margin:12px 0 0; padding-left:20px; color:var(--bad); }
+  .dates { display:flex; flex-wrap:wrap; gap:12px 32px; margin-top:16px; }
+  .dates div span { display:block; color:var(--muted); font-size:.85rem; }
+  .dates div strong { font-size:1.05rem; font-variant-numeric:tabular-nums; }
   .meta { color:var(--muted); font-size:.85rem; margin-top:8px; }
 </style>
 </head>
@@ -71,10 +74,13 @@ function toCents(str) {
   return m[1] ? -cents : cents;
 }
 
+// "2026-11-30" -> "30/11/2026"
+const fmtDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso || '—'); };
+
 function check(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   const issues = [];
-  let header = null, count = 0, sum = 0;
+  let header = null, count = 0, sum = 0, minDate = null, maxDate = null;
 
   lines.forEach((line, i) => {
     const f = line.split(';');
@@ -86,6 +92,13 @@ function check(text) {
       const c = toCents(f[3]);
       if (c === null) issues.push(`Línea ${i + 1}: monto inválido "${f[3]}".`);
       else { sum += c; count++; }
+      const d = (f[4] || '').trim().replace(/"/g, '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) issues.push(`Línea ${i + 1}: fecha inválida "${f[4]}".`);
+      else {
+        // Las fechas AAAA-MM-DD se pueden comparar como texto.
+        if (!minDate || d < minDate) minDate = d;
+        if (!maxDate || d > maxDate) maxDate = d;
+      }
     } else {
       issues.push(`Línea ${i + 1}: tipo de registro desconocido "${f[0]}".`);
     }
@@ -96,7 +109,7 @@ function check(text) {
     if (header.total === null) issues.push('El monto total del encabezado no es válido.');
     if (isNaN(header.count)) issues.push('La cantidad del encabezado no es válida.');
   }
-  return { header, count, sum, issues };
+  return { header, count, sum, minDate, maxDate, issues };
 }
 
 function render(name, r) {
@@ -128,8 +141,12 @@ function render(name, r) {
               diffCents !== null ? `dif. ${diffCents > 0 ? '+' : '-'}${money(Math.abs(diffCents))}` : 'sin encabezado')}
       </tbody>
     </table>
+    <div class="dates">
+      <div><span>Vencimiento mínimo</span><strong>${fmtDate(r.minDate)}</strong></div>
+      <div><span>Vencimiento máximo</span><strong>${fmtDate(r.maxDate)}</strong></div>
+    </div>
     ${r.issues.length ? '<ul class="issues"></ul>' : ''}
-    ${h ? `<div class="meta">Encabezado: id ${h.id} · fecha ${h.date}</div>` : ''}
+    ${h ? `<div class="meta">Encabezado: id ${h.id} · fecha ${fmtDate(h.date)}</div>` : ''}
   `;
   card.querySelector('h2').textContent = name;
   const ul = card.querySelector('ul.issues');
